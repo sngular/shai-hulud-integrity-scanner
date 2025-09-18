@@ -8,7 +8,7 @@
 set -euo pipefail
 
 # === Constants ===
-readonly VERSION_LIST_URL="https://raw.githubusercontent.com/sng-jroji/hulud-party/refs/heads/main/compromised-libs.txt"
+readonly VERSION_LIST_URL="https://raw.githubusercontent.com/Cobenian/shai-hulud-detect/refs/heads/main/compromised-packages.txt"
 readonly MALICIOUS_HASH="46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
 COMPROMISED_NAMESPACES=(
     "@crowdstrike"
@@ -28,6 +28,12 @@ COMPROMISED_NAMESPACES=(
     "@tnf-dev"
     "@ui-ux-gang"
     "@yoobic"
+)
+
+readonly GREP_EXCLUDES=(
+    --exclude-dir=".git"
+    --exclude="*.md"
+    --exclude="*.d.ts"
 )
 
 # Color constants.
@@ -102,6 +108,8 @@ scan_for_malicious_files() {
     local project_path="$1"; local findings_file="$2"
     info "Scanning file hashes for known malware..."
     touch "$findings_file"
+    find "$project_path" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \) \
+        -not -path '*/node_modules/*' -not -path '*/.git/*' -not -name '*.d.ts' -print0 | \
     while IFS= read -r -d '' file; do
         if [[ -f "$file" && -r "$file" ]]; then
             local file_hash
@@ -110,7 +118,7 @@ scan_for_malicious_files() {
                 echo "${file#"$project_path/"}" >> "$findings_file"
             fi
         fi
-    done < <(find "$project_path" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.json" \) -print0 2>/dev/null)
+    done
     info "File signature scan complete."
 }
 
@@ -149,8 +157,7 @@ scan_for_correlated_exfiltration() {
     local env_grep_pattern; env_grep_pattern=$(printf "%s\n" "${env_patterns[@]}")
     local exfil_grep_pattern; exfil_grep_pattern=$(printf "%s\n" "${exfil_patterns[@]}")
 
-    # Find files with environment access, then check those files for exfiltration patterns.
-    grep -lE "$(echo "$env_grep_pattern" | tr '\n' '|' | sed 's/|$//')" -r "$project_path" --exclude-dir=".git" 2>/dev/null | \
+    grep -lE "$(echo "$env_grep_pattern" | tr '\n' '|' | sed 's/|$//')" -r "$project_path" "${GREP_EXCLUDES[@]}" 2>/dev/null | \
     xargs -I{} grep -lE "$(echo "$exfil_grep_pattern" | tr '\n' '|' | sed 's/|$//')" "{}" 2>/dev/null | \
     sed "s|^${project_path}/||" >> "$findings_file" || true
 
@@ -163,7 +170,7 @@ scan_for_malicious_activity() {
     touch "$findings_file"
     local patterns=('trufflehog' 'credential.*exfiltration')
     local grep_pattern; grep_pattern=$(printf "|%s" "${patterns[@]}"); grep_pattern=${grep_pattern:1}
-    grep -Eirn "$grep_pattern" "$project_path" --exclude-dir=".git" | sed 's/^/   /' >> "$findings_file" || true
+    grep -Eirn "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed 's/^/   /' >> "$findings_file" || true
     info "Malicious activity scan complete."
 }
 
@@ -173,7 +180,7 @@ scan_for_suspicious_patterns() {
     touch "$findings_file"
     local patterns=('webhook\.site' 'bb8ca5f6-4175-45d2-b042-fc9ebb8170b7' 'malicious webhook endpoint')
     local grep_pattern; grep_pattern=$(printf "|%s" "${patterns[@]}"); grep_pattern=${grep_pattern:1}
-    grep -Eirn "$grep_pattern" "$project_path" --exclude-dir=".git" | sed 's/^/   /' >> "$findings_file" || true
+    grep -Eirn "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed 's/^/   /' >> "$findings_file" || true
     info "Suspicious pattern scan complete."
 }
 
@@ -183,7 +190,7 @@ scan_for_secret_scanning_patterns() {
     touch "$findings_file"
     local patterns=('credential scanning patterns' 'suspicious environment variable access' 'AWS_ACCESS_KEY' 'GITHUB_TOKEN' 'NPM_TOKEN' 'process\.env' 'os\.environ' 'getenv')
     local grep_pattern; grep_pattern=$(printf "|%s" "${patterns[@]}"); grep_pattern=${grep_pattern:1}
-    grep -Eirn "$grep_pattern" "$project_path" --exclude-dir=".git" | sed 's/^/   - Pattern found in /' >> "$findings_file" || true
+    grep -Eirn "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed 's/^/   - Pattern found in /' >> "$findings_file" || true
     info "Secret scanning pattern scan complete."
 }
 
@@ -203,6 +210,7 @@ generate_report() {
 
     local file_hash malicious_activity workflows versions namespaces
     local suspicious_patterns secret_scanning_patterns hooks git_state correlated_exfil
+
     file_hash=$(sed '/^\s*$/d' "${findings_dir}/file_hash_findings.txt")
     malicious_activity=$(sed '/^\s*$/d' "${findings_dir}/malicious_activity_findings.txt")
     workflows=$(sed '/^\s*$/d' "${findings_dir}/workflow_findings.txt")
@@ -216,8 +224,9 @@ generate_report() {
 
     # De-duplication logic: Remove medium-risk findings for files already flagged as high-risk
     if [[ -n "$correlated_exfil" ]]; then
-        suspicious_patterns=$(echo "$suspicious_patterns" | grep -v -f <(echo "$correlated_exfil")) || true
-        secret_scanning_patterns=$(echo "$secret_scanning_patterns" | grep -v -f <(echo "$correlated_exfil")) || true
+        suspicious_patterns=$(echo "$suspicious_patterns" | grep -vFf <(echo "$correlated_exfil" | sed 's/:.*//') 2>/dev/null) || true
+        secret_scanning_patterns=$(echo "$secret_scanning_patterns" | grep -vFf <(echo "$correlated_exfil" | sed 's/:.*//') 2>/dev/null) || true
+        malicious_activity=$(echo "$malicious_activity" | grep -vFf <(echo "$correlated_exfil" | sed 's/:.*//') 2>/dev/null) || true
     fi
 
     if [[ -n "$file_hash" ]]; then
