@@ -94,14 +94,27 @@ run_dependency_analysis() {
 run_project_analysis() {
     local project_path="$1"; local findings_dir="$2"
     header "Module 2: Project Structure & Content Analysis"
-    scan_for_malicious_files "$project_path" "${findings_dir}/file_hash_findings.txt"
-    scan_for_hooks "$project_path" "${findings_dir}/hook_findings.txt"
-    scan_workflows "$project_path" "${findings_dir}/workflow_findings.txt"
-    scan_for_correlated_exfiltration "$project_path" "${findings_dir}/correlated_exfiltration_findings.txt"
-    scan_for_malicious_activity "$project_path" "${findings_dir}/malicious_activity_findings.txt"
-    scan_for_suspicious_patterns "$project_path" "${findings_dir}/suspicious_pattern_findings.txt"
-    scan_for_secret_scanning_patterns "$project_path" "${findings_dir}/secret_scanning_patterns.txt"
-    analyze_git_state "$project_path" "${findings_dir}/git_findings.txt"
+
+    #Launch all sub-scanners in parallel
+    scan_for_malicious_files "$project_path" "${findings_dir}/file_hash_findings.txt" &
+    local hash_pid=$!
+    scan_for_hooks "$project_path" "${findings_dir}/hook_findings.txt" &
+    local hooks_pid=$!
+    scan_workflows "$project_path" "${findings_dir}/workflow_findings.txt" &
+    local workflows_pid=$!
+    scan_for_correlated_exfiltration "$project_path" "${findings_dir}/correlated_exfiltration_findings.txt" &
+    local exfil_pid=$!
+    scan_for_malicious_activity "$project_path" "${findings_dir}/malicious_activity_findings.txt" &
+    local activity_pid=$!
+    scan_for_suspicious_patterns "$project_path" "${findings_dir}/suspicious_pattern_findings.txt" &
+    local patterns_pid=$!
+    scan_for_secret_scanning_patterns "$project_path" "${findings_dir}/secret_scanning_patterns.txt" &
+    local secrets_pid=$!
+    analyze_git_state "$project_path" "${findings_dir}/git_findings.txt" &
+    local git_pid=$!
+
+    # Wait for all backgrounded scanners to complete before this function returns.
+    wait $hash_pid $hooks_pid $workflows_pid $exfil_pid $activity_pid $patterns_pid $secrets_pid $git_pid
 }
 
 scan_for_malicious_files() {
