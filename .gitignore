@@ -1,0 +1,33 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+# VS Code
+.vscode/
+*.code-workspace
+
+# IntelliJ / JetBrains IDEs
+.idea/
+*.iml
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# NetBeans
+nbproject/private/
+build/
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+\#*\#
+
+# Other backups
+*.bak
+*.tmp
