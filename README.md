@@ -24,6 +24,14 @@ The script requires a POSIX environment (Linux, macOS, or Windows with WSL2) and
 
 ## How to use
 
+Execute the following curl INSIDE the project you want to analyze:
+
+```bash
+    curl -s https://raw.githubusercontent.com/sng-jroji/hulud-party/refs/heads/main/scan-project.sh | bash /dev/stdin
+```
+
+Or locally:
+
 1.  Make the script executable:
     ```bash
     chmod +x scan-project.sh
