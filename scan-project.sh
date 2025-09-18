@@ -32,6 +32,7 @@ COMPROMISED_NAMESPACES=(
 
 readonly GREP_EXCLUDES=(
     --exclude-dir=".git"
+    --exclude-dir="node_modules"
     --exclude="*.md"
     --exclude="*.d.ts"
 )
@@ -94,8 +95,6 @@ run_dependency_analysis() {
 run_project_analysis() {
     local project_path="$1"; local findings_dir="$2"
     header "Module 2: Project Structure & Content Analysis"
-
-    #Launch all sub-scanners in parallel
     scan_for_malicious_files "$project_path" "${findings_dir}/file_hash_findings.txt" &
     local hash_pid=$!
     scan_for_hooks "$project_path" "${findings_dir}/hook_findings.txt" &
@@ -113,7 +112,6 @@ run_project_analysis() {
     analyze_git_state "$project_path" "${findings_dir}/git_findings.txt" &
     local git_pid=$!
 
-    # Wait for all backgrounded scanners to complete before this function returns.
     wait $hash_pid $hooks_pid $workflows_pid $exfil_pid $activity_pid $patterns_pid $secrets_pid $git_pid
 }
 
