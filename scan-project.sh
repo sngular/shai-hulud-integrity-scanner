@@ -8,7 +8,7 @@
 set -euo pipefail
 
 # === Constants ===
-readonly VERSION_LIST_URL="https://raw.githubusercontent.com/Cobenian/shai-hulud-detect/refs/heads/main/compromised-packages.txt"
+readonly VERSION_LIST_URL="https://raw.githubusercontent.com/sng-jroji/hulud-party/refs/heads/main/compromised-libs.txt"
 readonly MALICIOUS_HASH="46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
 COMPROMISED_NAMESPACES=(
     "@crowdstrike"
