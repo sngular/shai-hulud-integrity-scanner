@@ -126,11 +126,11 @@ scan_for_hooks() {
     local project_path="$1"; local findings_file="$2"
     info "Scanning for package.json hooks..."
     touch "$findings_file"
-    find "$project_path" -type f -name "*.json" -not -path "*.git/*" -print0 | while IFS= read -r -d $'\0' pkg_json; do
-        if jq -e '.scripts.postinstall' "$pkg_json" >/dev/null; then
-            echo "- File: ${pkg_json#"$project_path/"}" >> "$findings_file"
-        fi
-    done
+
+    find "$project_path" -type f -name "*.json" -not -path "*.git/*" -print0 | \
+    xargs -0 jq -r 'if (.name and .version and .scripts.postinstall) then input_filename else empty end' 2>/dev/null | \
+    sed "s|^${project_path}/|- File: |" >> "$findings_file" || true
+
     info "Hook scan complete."
 }
 
@@ -170,7 +170,7 @@ scan_for_malicious_activity() {
     touch "$findings_file"
     local patterns=('trufflehog' 'credential.*exfiltration')
     local grep_pattern; grep_pattern=$(printf "|%s" "${patterns[@]}"); grep_pattern=${grep_pattern:1}
-    grep -Eirn "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed 's/^/   /' >> "$findings_file" || true
+    grep -Eirl "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed "s|^${project_path}/|   - Activity found in: |" >> "$findings_file" || true
     info "Malicious activity scan complete."
 }
 
@@ -180,7 +180,7 @@ scan_for_suspicious_patterns() {
     touch "$findings_file"
     local patterns=('webhook\.site' 'bb8ca5f6-4175-45d2-b042-fc9ebb8170b7' 'malicious webhook endpoint')
     local grep_pattern; grep_pattern=$(printf "|%s" "${patterns[@]}"); grep_pattern=${grep_pattern:1}
-    grep -Eirn "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed 's/^/   /' >> "$findings_file" || true
+    grep -Eirl "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed "s|^${project_path}/|   - Pattern found in: |" >> "$findings_file" || true
     info "Suspicious pattern scan complete."
 }
 
@@ -190,7 +190,7 @@ scan_for_secret_scanning_patterns() {
     touch "$findings_file"
     local patterns=('credential scanning patterns' 'suspicious environment variable access' 'AWS_ACCESS_KEY' 'GITHUB_TOKEN' 'NPM_TOKEN' 'process\.env' 'os\.environ' 'getenv')
     local grep_pattern; grep_pattern=$(printf "|%s" "${patterns[@]}"); grep_pattern=${grep_pattern:1}
-    grep -Eirn "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed 's/^/   - Pattern found in /' >> "$findings_file" || true
+    grep -Eirl "$grep_pattern" "$project_path" "${GREP_EXCLUDES[@]}" | sed "s|^${project_path}/|   - Pattern found in: |" >> "$findings_file" || true
     info "Secret scanning pattern scan complete."
 }
 
