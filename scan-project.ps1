@@ -72,29 +72,39 @@ $TEMP_DIR = ""
 # === Functions ===
 
 # --- Logging and Utilities ---
-function Write-ErrorAndExit {
+function Write-ErrorAndExit
+{
     param([string]$Message)
-    Write-Host "ERROR: $Message"
+    Write-Host "ERROR: $( $Message )" -ForegroundColor Red
     exit 1
 }
 
-function Write-Warn {
+function Write-High
+{
     param([string]$Message)
-    Write-Host "WARN: $Message"
+    Write-Host "$( $Message )"  -ForegroundColor Red
 }
 
-function Write-Info {
+function Write-Warn
+{
     param([string]$Message)
-    Write-Host "INFO: $Message"
+    Write-Host "WARN: $( $Message )"  -ForegroundColor Yellow
 }
 
-function Write-Header {
+function Write-Info
+{
     param([string]$Message)
-    Write-Host "`n--- $Message ---"
+    Write-Host "INFO: $( $Message )"  -ForegroundColor Green
+}
+
+function Write-Header
+{
+    param([string]$Message)
+    Write-Host "`n--- $( $Message ) ---" -ForegroundColor Blue
 }
 
 function Check-Dependencies {
-    Write-Host "INFO: Verifying required tools (Git)..."
+    Write-Info "Verifying required tools (Git)..."
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         Write-ErrorAndExit "'git' is not installed or not found in the PATH."
     }
@@ -136,11 +146,11 @@ function Run-DependencyAnalysis {
 
     $pkg_file = Join-Path $project_path "package.json"
     if (-not (Test-Path $pkg_file)) {
-        Write-Host "WARN: package.json not found. Skipping dependency analysis."
+        Write-Warn "package.json not found. Skipping dependency analysis."
         return
     }
 
-    Write-Host "INFO: Scanning package.json..."
+    Write-Info "Scanning package.json..."
     try {
         $pkgJson = Get-Content $pkg_file -Raw | ConvertFrom-Json
         $allDependencies = @{}
@@ -155,7 +165,7 @@ function Run-DependencyAnalysis {
             "$($_.Name)@$($_.Value)".Replace('^', '').Replace('~', '')
         } | Sort-Object -Unique
 
-        Write-Host "INFO: Checking for vulnerable versions..."
+        Write-Info "Checking for vulnerable versions..."
         $remote_list = Download-List $VERSION_LIST_URL | ForEach-Object { $_.Replace(':', '@') } | Where-Object { $_ -notmatch ' integrity' }
 
         $vulnerableVersions = Compare-Object -ReferenceObject $remote_list -DifferenceObject $local_packages_full -IncludeEqual -ExcludeDifferent -PassThru
@@ -163,7 +173,7 @@ function Run-DependencyAnalysis {
             $vulnerableVersions | Out-File -FilePath $version_findings_file -Append -Encoding utf8
         }
 
-        Write-Host "INFO: Checking for compromised namespaces..."
+        Write-Info "Checking for compromised namespaces..."
         foreach ($ns in $COMPROMISED_NAMESPACES) {
             $found = $allDependencies.Keys | Where-Object { $_.StartsWith("$ns/") }
             if ($found) {
@@ -174,13 +184,13 @@ function Run-DependencyAnalysis {
     catch {
         Write-ErrorAndExit "Failed to process $pkg_file. Is it a valid JSON?"
     }
-    Write-Host "INFO: Dependency analysis completed."
+    Write-Info "Dependency analysis completed."
 }
 
 function Scan-ForMaliciousFiles {
     param([string]$project_path, [string]$findings_file)
     Write-Header "Module 2: Malware Signature Scan"
-    Write-Host "INFO: Scanning file hashes for known malware..."
+    Write-Info "Scanning file hashes for known malware..."
     New-Item -Path $findings_file -ItemType File -Force | Out-Null
 
     $files = Get-ChildItem -Path $project_path -Recurse -File -Include "*.js", "*.ts", "*.json" | Where-Object {
@@ -194,13 +204,13 @@ function Scan-ForMaliciousFiles {
             $relativePath | Out-File -FilePath $findings_file -Append -Encoding utf8
         }
     }
-    Write-Host "INFO: File signature scan completed."
+    Write-Info "File signature scan completed."
 }
 
 function Scan-ForHooks {
     param([string]$project_path, [string]$findings_file)
     Write-Header "Module 3: 'postinstall' Hook Scan"
-    Write-Host "INFO: Scanning for hooks in package.json..."
+    Write-Info "Scanning for hooks in package.json..."
     New-Item -Path $findings_file -ItemType File -Force | Out-Null
 
     $jsonFiles = Get-ChildItem -Path $project_path -Recurse -File -Filter "*.json" | Where-Object { $_.FullName -notmatch '(\.git)' }
@@ -215,30 +225,30 @@ function Scan-ForHooks {
             # Ignore invalid JSON files
         }
     }
-    Write-Host "INFO: Hook scan completed."
+    Write-Info "Hook scan completed."
 }
 
 function Scan-Workflows {
     param([string]$project_path, [string]$findings_file)
     Write-Header "Module 4: CI/CD Workflow Scan"
-    Write-Host "INFO: Scanning CI/CD workflow files..."
+    Write-Info "Scanning CI/CD workflow files..."
     New-Item -Path $findings_file -ItemType File -Force | Out-Null
 
     $workflows_dir = Join-Path $project_path ".github\workflows"
     if (-not (Test-Path $workflows_dir -PathType Container)) {
-        Write-Host "INFO: .github/workflows directory not found, skipping."
+        Write-Info ".github/workflows directory not found, skipping."
         return
     }
     Get-ChildItem -Path $workflows_dir -Recurse -File -Filter "*.yml" | ForEach-Object {
         "- $($_.FullName.Substring($project_path.Length + 1))" | Out-File -FilePath $findings_file -Append -Encoding utf8
     }
-    Write-Host "INFO: Workflow scan completed."
+    Write-Info "Workflow scan completed."
 }
 
 function Scan-ForCorrelatedExfiltration {
     param([string]$project_path, [string]$findings_file)
     Write-Header "Module 5: Correlated Exfiltration Scan"
-    Write-Host "INFO: Scanning for correlated exfiltration with secret scanning..."
+    Write-Info "Scanning for correlated exfiltration with secret scanning..."
     New-Item -Path $findings_file -ItemType File -Force | Out-Null
 
     [string[]]$env_patterns = @('process\.env', 'os\.environ', 'getenv', 'AWS_ACCESS_KEY', 'GITHUB_TOKEN', 'NPM_TOKEN')
@@ -255,7 +265,7 @@ function Scan-ForCorrelatedExfiltration {
              $file.FullName.Substring($project_path.Length + 1) | Out-File -FilePath $findings_file -Append -Encoding utf8
         }
     }
-    Write-Host "INFO: Correlated exfiltration scan completed."
+    Write-Info "Correlated exfiltration scan completed."
 }
 
 function Scan-ForPatterns {
@@ -273,17 +283,17 @@ function Scan-ForPatterns {
         }
     }
 
-    Write-Host "INFO: Pattern scan completed."
+    Write-Info "Pattern scan completed."
 }
 
 function Analyze-GitState {
     param([string]$project_path, [string]$findings_file)
     Write-Header "Module 6: Git State Analysis"
-    Write-Host "INFO: Analyzing git branches..."
+    Write-Info "Analyzing git branches..."
     New-Item -Path $findings_file -ItemType File -Force | Out-Null
 
     if (-not (Test-Path (Join-Path $project_path ".git"))) {
-        Write-Host "WARN: Not a git repository, skipping."
+        Write-Warn "Not a git repository, skipping."
         return
     }
 
@@ -292,9 +302,9 @@ function Analyze-GitState {
         $branches = git -C $project_path branch -a
         $branches | ForEach-Object { "  $_" } | Out-File -FilePath $findings_file -Append -Encoding utf8
     } catch {
-        Write-Host "WARN: Could not execute 'git branch -a'. Make sure git is configured correctly."
+        Write-Warn "Could not execute 'git branch -a'. Make sure git is configured correctly."
     }
-    Write-Host "INFO: Git state analysis completed."
+    Write-Info "Git state analysis completed."
 }
 
 # --- Report ---
@@ -340,72 +350,72 @@ function Generate-Report {
 
     # If there are no issues, show success message and exit
     if ($total_issues -eq 0) {
-        Write-Host "`n-----------------------------------------------------"
-        Write-Host "INFO: [+] No actionable project integrity issues were found."
-        Write-Host "-----------------------------------------------------`n"
+        Write-Info "`n-----------------------------------------------------"
+        Write-Info "[+] No actionable project integrity issues were found."
+        Write-Info "-----------------------------------------------------`n"
         if ($git_state) {
-            Write-Host "[INFO] Git State Analysis:"
+            Write-Info "[INFO] Git State Analysis:"
             $git_state | Out-Host
         }
         return 0 # Exit code to indicate success
     }
 
     # If there are issues, generate the detailed report
-    Write-Host "`n=============================================="
-    Write-Host "         SHAI-HULUD DETECTION REPORT"
-    Write-Host "=============================================="
+    Write-Info "`n=============================================="
+    Write-Info "         SHAI-HULUD DETECTION REPORT"
+    Write-Info "=============================================="
 
     if ($file_hash) {
-        Write-Host "`n[!] CRITICAL RISK: Known Malware Signature Detected"
-        Write-Host "    - File with matching signature: $($file_hash)"
-        Write-Host "    NOTE: This is a definitive indicator of compromise. Immediate investigation is required."
+        Write-High "`n[!] CRITICAL RISK: Known Malware Signature Detected"
+        Write-High "    - File with matching signature: $($file_hash)"
+        Write-High "    NOTE: This is a definitive indicator of compromise. Immediate investigation is required."
     }
     if ($correlated_exfil) {
-        Write-Host "`n[!] HIGH RISK: Environment Scan with Exfiltration Detected"
-        $correlated_exfil | ForEach-Object { Write-Host "    - File: $_" }
-        Write-Host "    NOTE: These files access secrets AND contain data exfiltration patterns."
+        Write-High "`n[!] HIGH RISK: Environment Scan with Exfiltration Detected"
+        $correlated_exfil | ForEach-Object { Write-High "    - File: $_" }
+        Write-High "    NOTE: These files access secrets AND contain data exfiltration patterns."
     }
     if ($workflows) {
-        Write-Host "`n[!] HIGH RISK: Malicious Workflow Files Detected"
-        $workflows | ForEach-Object { Write-Host $_ }
+        Write-High "`n[!] HIGH RISK: Malicious Workflow Files Detected"
+        $workflows | ForEach-Object { Write-High $_ }
     }
     if ($versions) {
-        Write-Host "`n[!] HIGH RISK: Compromised Package Versions Detected"
-        $versions | ForEach-Object { Write-Host "    - Package: $_" }
-        Write-Host "    NOTE: These specific package versions are known to be compromised."
+        Write-High "`n[!] HIGH RISK: Compromised Package Versions Detected"
+        $versions | ForEach-Object { Write-High "    - Package: $_" }
+        Write-High "    NOTE: These specific package versions are known to be compromised."
     }
     if ($malicious_activity) {
-        Write-Host "`n[!] HIGH RISK: Trufflehog Activity/Secret Scanning Detected"
-        $malicious_activity | ForEach-Object { Write-Host $_ }
-        Write-Host "    NOTE: These patterns indicate probable malicious credential harvesting."
+        Write-High "`n[!] HIGH RISK: Trufflehog Activity/Secret Scanning Detected"
+        $malicious_activity | ForEach-Object { Write-High $_ }
+        Write-High "    NOTE: These patterns indicate probable malicious credential harvesting."
     }
     if ($namespaces) {
-        Write-Host "`n[!] MEDIUM RISK: Packages from Compromised Namespaces"
-        $namespaces | ForEach-Object { Write-Host "    - $_" }
-        Write-Host "    NOTE: Carefully review the packages from these organizations."
+        Write-Warn "`n[!] MEDIUM RISK: Packages from Compromised Namespaces"
+        $namespaces | ForEach-Object { Write-Warn "    - $_" }
+        Write-Warn "    NOTE: Carefully review the packages from these organizations."
     }
     if ($suspicious_patterns) {
-        Write-Host "`n[!] MEDIUM RISK: Suspicious Content Patterns"
-        $suspicious_patterns | ForEach-Object { Write-Host $_ }
-        Write-Host "    NOTE: Manual review is required to determine if they are malicious."
+        Write-Warn "`n[!] MEDIUM RISK: Suspicious Content Patterns"
+        $suspicious_patterns | ForEach-Object { Write-Warn $_ }
+        Write-Warn "    NOTE: Manual review is required to determine if they are malicious."
     }
     if ($secret_scanning_patterns) {
-        Write-Host "`n[!] MEDIUM RISK: Potentially Suspicious Secret Scanning Patterns"
-        $secret_scanning_patterns | ForEach-Object { Write-Host $_ }
-        Write-Host "    NOTE: These may be legitimate security tools or framework code. Manual review is recommended."
+        Write-Warn "`n[!] MEDIUM RISK: Potentially Suspicious Secret Scanning Patterns"
+        $secret_scanning_patterns | ForEach-Object { Write-Warn $_ }
+        Write-Warn "    NOTE: These may be legitimate security tools or framework code. Manual review is recommended."
     }
     if ($hooks) {
-        Write-Host "`n[!] MEDIUM RISK: Potentially Malicious package.json Hooks"
-        $hooks | ForEach-Object { Write-Host $_ }
-        Write-Host "    NOTE: 'postinstall' scripts can run arbitrary commands and require review."
+        Write-Warn "`n[!] MEDIUM RISK: Potentially Malicious package.json Hooks"
+        $hooks | ForEach-Object { Write-Warn $_ }
+        Write-Warn "    NOTE: 'postinstall' scripts can run arbitrary commands and require review."
     }
 
-    Write-Host "`n=============================================="
-    Write-Host "SUMMARY:"
-    Write-Host "    High/Critical Risk Issues: $high_risk"
-    Write-Host "    Medium Risk Issues: $medium_risk"
-    Write-Host "    Total Actionable Issues: $total_issues"
-    Write-Host "=============================================="
+    Write-Info "`n=============================================="
+    Write-Info "SUMMARY:"
+    Write-Info "    High/Critical Risk Issues: $high_risk"
+    Write-Info "    Medium Risk Issues: $medium_risk"
+    Write-Info "    Total Actionable Issues: $total_issues"
+    Write-Info "=============================================="
     return 2 # Exit code to indicate that issues were found
 }
 
@@ -417,7 +427,7 @@ function Main {
         Write-ErrorAndExit "Project directory not found at: $project_path"
     }
 
-    Write-Host "INFO: Scanning project at: $project_path"
+    Write-Info "Scanning project at: $project_path"
 
     $TEMP_DIR = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName())
     New-Item -ItemType Directory -Path $TEMP_DIR | Out-Null
@@ -446,20 +456,35 @@ function Main {
 
         # --- Utility Functions Required by Jobs ---
         # (Copied here so each job has them in its own scope)
-        function Write-ErrorAndExit { param([string]$Message) { Write-Host "ERROR: $Message"; exit 1 } }
-        function Write-Warn { param([string]$Message) { Write-Host "WARN: $Message" } }
-        function Write-Info { param([string]$Message) { Write-Host "INFO: $Message" } }
-        function Write-Header { param([string]$Message) { Write-Host "`n--- $Message ---" } }
+        function Write-ErrorAndExit
+        {
+            param([string]$Message)
+            Write-Host "ERROR: $( $Message )" -ForegroundColor Red
+            exit 1
+        }
 
-        function Download-List {
-            param([string]$Url)
-            try {
-                $response = Invoke-WebRequest -Uri $Url -UseBasicParsing
-                return $response.Content -split ' ' | Where-Object { $_ }
-            }
-            catch {
-                Write-ErrorAndExit "Could not download the list from $Url"
-            }
+        function Write-High
+        {
+            param([string]$Message)
+            Write-Host "$( $Message )"  -ForegroundColor Red
+        }
+
+        function Write-Warn
+        {
+            param([string]$Message)
+            Write-Host "WARN: $( $Message )"  -ForegroundColor Yellow
+        }
+
+        function Write-Info
+        {
+            param([string]$Message)
+            Write-Host "INFO: $( $Message )"  -ForegroundColor Green
+        }
+
+        function Write-Header
+        {
+            param([string]$Message)
+            Write-Host "`n--- $( $Message ) ---" -ForegroundColor Blue
         }
 
         function Get-FilesToScan {
@@ -478,79 +503,79 @@ function Main {
             New-Item -Path $version_findings_file -ItemType File -Force | Out-Null
             New-Item -Path $namespace_findings_file -ItemType File -Force | Out-Null
             $pkg_file = Join-Path $project_path "package.json"
-            if (-not (Test-Path $pkg_file)) { Write-Host "WARN: package.json not found. Skipping dependency analysis."; return }
-            Write-Host "INFO: Scanning package.json..."
+            if (-not (Test-Path $pkg_file)) { Write-Warn "package.json not found. Skipping dependency analysis."; return }
+            Write-Info "Scanning package.json..."
             try {
                 $pkgJson = Get-Content $pkg_file -Raw | ConvertFrom-Json
                 $allDependencies = @{}; if ($pkgJson.PSObject.Properties['dependencies']) { $pkgJson.dependencies.PSObject.Properties | ForEach-Object { $allDependencies[$_.Name] = $_.Value } }; if ($pkgJson.PSObject.Properties['devDependencies']) { $pkgJson.devDependencies.PSObject.Properties | ForEach-Object { $allDependencies[$_.Name] = $_.Value } }
                 $local_packages_full = $allDependencies.GetEnumerator() | ForEach-Object { "$($_.Name)@$($_.Value)".Replace('^', '').Replace('~', '') } | Sort-Object -Unique
-                Write-Host "INFO: Checking for vulnerable versions..."
+                Write-Info "Checking for vulnerable versions..."
                 $remote_list = Download-List $VERSION_LIST_URL | ForEach-Object { $_.Replace(':', '@') } | Where-Object { $_ -notmatch ' integrity' }
                 $vulnerableVersions = Compare-Object -ReferenceObject $remote_list -DifferenceObject $local_packages_full -IncludeEqual -ExcludeDifferent -PassThru
                 if ($vulnerableVersions) { $vulnerableVersions | Out-File -FilePath $version_findings_file -Append -Encoding utf8 }
-                Write-Host "INFO: Checking for compromised namespaces..."
+                Write-Info "Checking for compromised namespaces..."
                 foreach ($ns in $COMPROMISED_NAMESPACES) { $found = $allDependencies.Keys | Where-Object { $_.StartsWith("$ns/") }; if ($found) { "Warning: Contains packages from the compromised namespace: $ns (Found in package.json)" | Out-File -FilePath $namespace_findings_file -Append -Encoding utf8 } }
             } catch { Write-ErrorAndExit "Failed to process $pkg_file. Is it a valid JSON?" }
-            Write-Host "INFO: Dependency analysis completed."
+            Write-Info "Dependency analysis completed."
         }
         function Scan-ForMaliciousFiles {
             param([string]$project_path, [string]$findings_file)
             Write-Header "Module 2: Malware Signature Scan"
-            Write-Host "INFO: Scanning file hashes for known malware..."
+            Write-Info "Scanning file hashes for known malware..."
             New-Item -Path $findings_file -ItemType File -Force | Out-Null
             $files = Get-ChildItem -Path $project_path -Recurse -File -Include "*.js", "*.ts", "*.json" | Where-Object { $_.FullName -notmatch '(\.git|node_modules)' -and $_.Name -notlike "*.d.ts" }
             foreach ($file in $files) { $file_hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLower(); if ($file_hash -eq $MALICIOUS_HASH) { $file.FullName.Substring($project_path.Length + 1) | Out-File -FilePath $findings_file -Append -Encoding utf8 } }
-            Write-Host "INFO: File signature scan completed."
+            Write-Info "File signature scan completed."
         }
         function Scan-ForHooks {
             param([string]$project_path, [string]$findings_file)
             Write-Header "Module 3: 'postinstall' Hook Scan"
-            Write-Host "INFO: Scanning for hooks in package.json..."
+            Write-Info "Scanning for hooks in package.json..."
             New-Item -Path $findings_file -ItemType File -Force | Out-Null
             $jsonFiles = Get-ChildItem -Path $project_path -Recurse -File -Filter "*.json" | Where-Object { $_.FullName -notmatch '(\.git)' }
             foreach ($file in $jsonFiles) { try { $content = Get-Content $file.FullName -Raw | ConvertFrom-Json -ErrorAction SilentlyContinue; if ($null -ne $content.scripts.postinstall) { "- File: $($file.FullName.Substring($project_path.Length + 1))" | Out-File -FilePath $findings_file -Append -Encoding utf8 } } catch { } }
-            Write-Host "INFO: Hook scan completed."
+            Write-Info "Hook scan completed."
         }
         function Scan-Workflows {
             param([string]$project_path, [string]$findings_file)
             Write-Header "Module 4: CI/CD Workflow Scan"
-            Write-Host "INFO: Scanning CI/CD workflow files..."
+            Write-Info "Scanning CI/CD workflow files..."
             New-Item -Path $findings_file -ItemType File -Force | Out-Null
             $workflows_dir = Join-Path $project_path ".github\workflows"
-            if (-not (Test-Path $workflows_dir -PathType Container)) { Write-Host "INFO: .github/workflows directory not found, skipping."; return }
+            if (-not (Test-Path $workflows_dir -PathType Container)) { Write-Info ".github/workflows directory not found, skipping."; return }
             Get-ChildItem -Path $workflows_dir -Recurse -File -Filter "*.yml" | ForEach-Object { "- $($_.FullName.Substring($project_path.Length + 1))" | Out-File -FilePath $findings_file -Append -Encoding utf8 }
-            Write-Host "INFO: Workflow scan completed."
+            Write-Info "Workflow scan completed."
         }
         function Scan-ForCorrelatedExfiltration {
             param([string]$project_path, [string]$findings_file)
             Write-Header "Module 5: Correlated Exfiltration Scan"
-            Write-Host "INFO: Scanning for correlated exfiltration with secret scanning..."
+            Write-Info "Scanning for correlated exfiltration with secret scanning..."
             New-Item -Path $findings_file -ItemType File -Force | Out-Null
             [string[]]$env_patterns = @('process\.env', 'os\.environ', 'getenv', 'AWS_ACCESS_KEY', 'GITHUB_TOKEN', 'NPM_TOKEN')
             [string[]]$exfil_patterns = @('webhook\.site', 'bb8ca5f6-4175-45d2-b042-fc9ebb8170b7', 'exfiltrat')
             $env_regex = $env_patterns -join '|'; $exfil_regex = $exfil_patterns -join '|'
             $filesToScan = Get-FilesToScan -BasePath $project_path
             foreach ($file in $filesToScan) { $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue; if (($content -match $env_regex) -and ($content -match $exfil_regex)) { $file.FullName.Substring($project_path.Length + 1) | Out-File -FilePath $findings_file -Append -Encoding utf8 } }
-            Write-Host "INFO: Correlated exfiltration scan completed."
+            Write-Info "Correlated exfiltration scan completed."
         }
         function Scan-ForPatterns {
             param([string]$project_path, [string]$findings_file, [string[]]$patterns, [string]$infoMessage, [string]$findingPrefix)
-            Write-Host $infoMessage
+            Write-Info $infoMessage
             New-Item -Path $findings_file -ItemType File -Force | Out-Null
             if ($patterns.Count -eq 0) { return }
             $regex = $patterns -join '|'
             $filesToScan = Get-FilesToScan -BasePath $project_path
             if ($null -ne $filesToScan) { Select-String -Path $filesToScan.FullName -Pattern $regex -List -ErrorAction SilentlyContinue | ForEach-Object { "$findingPrefix $($_.Path.Substring($project_path.Length + 1))" | Out-File -FilePath $findings_file -Append -Encoding utf8 } }
-            Write-Host "INFO: Pattern scan completed."
+            Write-Info "Pattern scan completed."
         }
         function Analyze-GitState {
             param([string]$project_path, [string]$findings_file)
             Write-Header "Module 6: Git State Analysis"
-            Write-Host "INFO: Analyzing git branches..."
+            Write-Info "Analyzing git branches..."
             New-Item -Path $findings_file -ItemType File -Force | Out-Null
-            if (-not (Test-Path (Join-Path $project_path ".git"))) { Write-Host "WARN: Not a git repository, skipping."; return }
-            try { "All local and remote branches:" | Out-File -FilePath $findings_file -Append -Encoding utf8; $branches = git -C $project_path branch -a; $branches | ForEach-Object { "  $_" } | Out-File -FilePath $findings_file -Append -Encoding utf8 } catch { Write-Host "WARN: Could not execute 'git branch -a'. Make sure git is configured correctly." }
-            Write-Host "INFO: Git state analysis completed."
+            if (-not (Test-Path (Join-Path $project_path ".git"))) { Write-Warn "Not a git repository, skipping."; return }
+            try { "All local and remote branches:" | Out-File -FilePath $findings_file -Append -Encoding utf8; $branches = git -C $project_path branch -a; $branches | ForEach-Object { "  $_" } | Out-File -FilePath $findings_file -Append -Encoding utf8 } catch { Write-Warn "Could not execute 'git branch -a'. Make sure git is configured correctly." }
+            Write-Info "Git state analysis completed."
         }
     }
     # =================================================================================
@@ -588,10 +613,9 @@ function Main {
         Get-Job | Remove-Job
     }
 
-    Write-Host "INFO: Scan completed."
+    Write-Info "Scan completed."
     exit $final_exit_code
 }
 
 # Execute the script
 Main
-
