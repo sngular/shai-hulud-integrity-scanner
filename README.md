@@ -29,6 +29,8 @@ The script requires a POSIX environment (Linux, macOS, or Windows with WSL2) and
 
 ## How to use
 
+### Running on Linux/macOS/WSL
+
 Execute the following curl INSIDE the project you want to analyze:
 
 ```bash
@@ -53,6 +55,45 @@ to be direct and unambiguous.
 Here is a concise warning section that you can add to the internal `README.md`.
 
 ---
+
+### Running on Windows with PowerShell
+
+If you are on Windows and prefer to use the PowerShell version of the scanner (`scan-project.ps1`), follow these steps:
+
+1. **Download the script** into your project directory (or anywhere on your machine):
+
+    ```powershell
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sng-jroji/hulud-party/refs/heads/main/scan-project.ps1" -OutFile "scan-project.ps1"
+    ```
+
+2. **Open PowerShell** (preferably PowerShell 7 / Windows Terminal for full UTF-8 and color support).
+
+3. **Allow script execution** if needed (only once per system):
+
+    ```powershell
+    Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+    ```
+
+4. **Run the scanner inside your project folder**:
+
+    ```powershell
+    .\scan-project.ps1
+    ```
+
+   Or run it against a specific project path:
+
+    ```powershell
+    .\scan-project.ps1 -Path "C:\path\to\project"
+    ```
+
+5. **Exit codes:**
+
+    * **0:** Scan complete, no issues found.
+    * **1:** Script error (e.g., a required dependency is missing).
+    * **2:** Scan complete, actionable issues were found.
+
+**Tip:** For best results on Windows, run the script in **PowerShell 7+** inside **Windows Terminal**.  
+This ensures UTF-8 characters and colored output render correctly.
 
 ## ⚠️ Important Note on scanning accuracy
 
