@@ -95,15 +95,26 @@ If you are on Windows and prefer to use the PowerShell version of the scanner (`
 **Tip:** For best results on Windows, run the script in **PowerShell 7+** inside **Windows Terminal**.  
 This ensures UTF-8 characters and colored output render correctly.
 
-## ⚠️ Important Note on scanning accuracy
+## ⚠️ Important note on scanning accuracy
 
-**This scanner provides the most accurate results when a `package-lock.json` file is present.**
+**This scanner provides the most accurate results when a lockfile is present.**
 
-The `package-lock.json` contains a complete list of every single package in your project, including the **transitive
-dependencies** (the dependencies of your dependencies).
+The script automatically detects and prioritizes the most reliable dependency file available in the following order:
 
-If the lockfile is not found, the scanner will fall back to reading `package.json`. In this mode, it can **only** detect
-vulnerabilities in your *direct* dependencies and will be blind to any threats hidden in the transitive ones.
+1. **`pnpm-lock.yaml` (Highest Accuracy):** If found, and if `pnpm` is installed, the scanner will analyze the complete
+   dependency tree, including all **transitive dependencies**.
+2. **`yarn.lock` (High Accuracy):** If found, and if `yarn` is installed, the scanner will analyze the complete
+   dependency tree, including all **transitive dependencies**.
+3. **`package-lock.json` (High Accuracy):** If found, the scanner will parse the lockfile to analyze the complete
+   dependency tree, including all **transitive dependencies**.
+4. **`package.json` (Fallback - Low Accuracy):** If no lockfile is found, the scanner will fall back to reading
+   `package.json`. In this mode, it can **only** detect vulnerabilities in your *direct* dependencies and will be blind
+   to any threats hidden in the transitive ones.
+
+#### Best Practice
+
+For a complete and reliable security audit, always run the scanner **after** installing your dependencies (e.g.,
+`npm install`, `yarn install`, or `pnpm install`), as this guarantees a lockfile is present.
 
 ## Exit codes & example output
 

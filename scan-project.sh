@@ -49,18 +49,88 @@ readonly C_RED C_GREEN C_YELLOW C_BLUE C_BOLD C_RESET
 # === Global Variables ===
 TEMP_DIR=""
 
-# === Functions ===
-
 # --- Logging & Utilities ---
 error() { echo -e "${C_RED}${C_BOLD}ERROR:${C_RESET} $1" >&2; exit 1; }
 warn() { echo -e "${C_YELLOW}${C_BOLD}WARN:${C_RESET} $1" >&2; }
-info() { echo -e "${C_GREEN}INFO:${C_RESET} $1"; }
+info() { echo -e "${C_GREEN}INFO:${C_RESET} $1" >&2; }
 header() { echo -e "\n${C_BLUE}${C_BOLD}--- $1 ---${C_RESET}"; }
 
 check_dependencies() { info "Verifying required tools (jq, curl, git, shasum)..."; for cmd in jq curl git shasum; do command -v "$cmd" &>/dev/null || error "'$cmd' is not installed."; done; }
 download_list() { curl -sSL "$1" | tr ' ' '\n' | grep -v '^$' || error "Failed to download list from $1"; }
 
-# --- Analysis Modules ---
+# --- Dependency Parsers ---
+
+parse_pnpm_lock() {
+    local project_path="$1"
+    info "Found pnpm-lock.yaml. Analyzing full dependency tree with PNPM..."
+    cd "$project_path" && pnpm list --json --prod --dev 2>/dev/null | \
+        jq -r '.[] | .dependencies // {} | to_entries[] | "\(.key)@\(.value.version)"' | \
+        sort -u || { warn "The 'pnpm list' command failed. Please run 'pnpm install'."; return 1; }
+}
+
+parse_npm_lock() {
+    local npm_lock_file="$1"
+    info "Found package-lock.json. Analyzing full dependency tree..."
+
+    if jq -e '.packages' "$npm_lock_file" >/dev/null 2>&1; then
+        # Modern (v7+) package-lock.json format
+        jq -r '
+            .packages | to_entries[]
+            | select(.key != "" and .value.version)
+            | "\(.key | ltrimstr("node_modules/"))@\(.value.version)"
+        ' "$npm_lock_file" | sort -u || { warn "Failed to parse modern package-lock.json."; return 1; }
+    else
+        # Legacy (v6) package-lock.json format
+        jq -r '
+            def walk_deps(obj):
+                if obj then
+                    to_entries[]
+                    | select(.value.version)
+                    | "\(.key)@\(.value.version)", ( .value.dependencies? | walk_deps )
+                else empty end;
+            .dependencies? | walk_deps
+        ' "$npm_lock_file" | sort -u || { warn "Failed to parse legacy package-lock.json."; return 1; }
+    fi
+}
+
+parse_yarn_lock() {
+    local project_path="$1"
+    local pkg_file="${project_path}/package.json"
+
+    info "Found yarn.lock. Detecting Yarn version..."
+
+    local is_modern_yarn=false
+    if jq -e '.packageManager' "$pkg_file" >/dev/null 2>&1; then
+        if jq -r '.packageManager' "$pkg_file" | grep -q '^yarn@[2-9]\.'; then
+            is_modern_yarn=true
+        fi
+    elif yarn --version | grep -q '^[2-9]\.'; then
+        is_modern_yarn=true
+    fi
+
+    if [[ "$is_modern_yarn" == true ]]; then
+        info "Modern Yarn (v2+) detected. Using 'yarn info'..."
+        (cd "$project_path" && yarn info --json 2>/dev/null | \
+            jq -r '.value' | sed 's/@npm:/@/' | sort -u) || \
+            { warn "The 'yarn info' command failed. Please run 'yarn install'."; return 1; }
+    else
+        info "Classic Yarn (v1) detected. Using 'yarn list'..."
+        (cd "$project_path" && yarn list --json --no-progress 2>/dev/null | \
+            jq -r '.. | .name? | select(. != null)' | \
+            sort -u) || \
+            { warn "The 'yarn list' command failed. The project may have no dependencies installed."; return 1; }
+    fi
+}
+
+parse_package_json() {
+    local pkg_file="$1"
+    warn "No lockfile found. Falling back to package.json (will miss transitive dependencies)."
+    info "Scanning package.json..."
+    jq -r '(.dependencies // {}) + (.devDependencies // {}) | to_entries[] | "\(.key)@\(.value)"' "$pkg_file" | \
+    sed 's/[\^~]//g' | sort -u || { error "Failed to parse package.json."; return 1; }
+}
+
+# --- Main dependency analysis dispatcher ---
 
 run_dependency_analysis() {
     local project_path="$1"; local findings_dir="$2"
@@ -69,19 +139,34 @@ run_dependency_analysis() {
     local version_findings_file="${findings_dir}/version_findings.txt"; touch "$version_findings_file"
     local namespace_findings_file="${findings_dir}/namespace_findings.txt"; touch "$namespace_findings_file"
 
+    local pnpm_lock_file="${project_path}/pnpm-lock.yaml"
+    local yarn_lock_file="${project_path}/yarn.lock"
+    local npm_lock_file="${project_path}/package-lock.json"
     local pkg_file="${project_path}/package.json"
+    local local_packages_full=""
+
     if [[ ! -f "$pkg_file" ]]; then
-        warn "No package.json found. Skipping dependency analysis."; return
+        warn "No package.json found. Skipping all dependency analysis."; return
     fi
 
-    info "Scanning package.json..."
-    local local_packages_full
-    local_packages_full=$(jq -r '(.dependencies // {}) + (.devDependencies // {}) | to_entries[] | "\(.key)@\(.value)"' "$pkg_file" | sed 's/[\^~]//g' | sort -u || error "Failed to parse $pkg_file.")
+    if [[ -f "$pnpm_lock_file" ]] && command -v pnpm &>/dev/null; then
+        local_packages_full=$(parse_pnpm_lock "$project_path")
+    elif [[ -f "$yarn_lock_file" ]] && command -v yarn &>/dev/null; then
+        local_packages_full=$(parse_yarn_lock "$project_path")
+    elif [[ -f "$npm_lock_file" ]]; then
+        local_packages_full=$(parse_npm_lock "$npm_lock_file")
+    else
+        local_packages_full=$(parse_package_json "$pkg_file")
+    fi
 
-    info "Checking for vulnerable versions..."
-    local remote_list_file="${findings_dir}/remote_list.txt"
-    download_list "$VERSION_LIST_URL" | sed 's/:/@/' | grep -v ' integrity' > "$remote_list_file"
-    grep -F -x -f "$remote_list_file" <(echo "$local_packages_full") >> "$version_findings_file" || true
+    if [[ -z "$local_packages_full" ]]; then
+        warn "Could not determine local packages. Skipping version check."
+    else
+        info "Checking for vulnerable versions..."
+        local remote_list_file="${findings_dir}/remote_list.txt"
+        download_list "$VERSION_LIST_URL" | sed 's/:/@/' | grep -v ' integrity' > "$remote_list_file"
+        grep -F -x -f "$remote_list_file" <(echo "$local_packages_full") >> "$version_findings_file" || true
+    fi
 
     info "Checking for compromised namespaces..."
     for ns in "${COMPROMISED_NAMESPACES[@]}"; do
@@ -91,6 +176,8 @@ run_dependency_analysis() {
     done
     info "Dependency analysis complete."
 }
+
+# --- Analysis Modules ---
 
 run_project_analysis() {
     local project_path="$1"; local findings_dir="$2"
