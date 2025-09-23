@@ -1,4 +1,4 @@
-# Project Integrity Scanner
+# Shai-Hulud Integrity Scanner
 
 A script to scan Node.js projects for known vulnerabilities and suspicious patterns related to the Shai-Hulud
 supply-chain attack.
