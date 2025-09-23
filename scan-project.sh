@@ -8,8 +8,19 @@
 set -euo pipefail
 
 # === Constants ===
-readonly VERSION_LIST_URL="https://raw.githubusercontent.com/sng-jroji/hulud-party/refs/heads/main/compromised-libs.txt"
-readonly MALICIOUS_HASH="46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
+readonly VERSION_LIST_URL="https://raw.githubusercontent.com/sngular/shai-hulud-integrity-scanner/refs/heads/main/compromised-libs.txt"
+readonly MALICIOUS_HASHES=(
+    "46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
+    "de0e25a3e6c1e1e5998b306b7141b3dc4c0088da9d7bb47c1c00c91e6e4f85d6"
+    "81d2a004a1bca6ef87a1caf7d0e0b355ad1764238e40ff6d1b1cb77ad4f595c3"
+    "83a650ce44b2a9854802a7fb4c202877815274c129af49e6c2d1d5d5d55c501e"
+    "4b2399646573bb737c4969563303d8ee2e9ddbd1b271f1ca9e35ea78062538db"
+    "dc67467a39b70d1cd4c1f7f7a459b35058163592f4a9e8fb4dffcbba98ef210c"
+    "46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
+    "b74caeaa75e077c99f7d44f46daaf9796a3be43ecf24f2a1fd381844669da777"
+    "86532ed94c5804e1ca32fa67257e1bb9de628e3e48a1f56e67042dc055effb5b"
+    "aba1fcbd15c6ba6d9b96e34cec287660fff4a31632bf76f2a766c499f55ca1ee"
+)
 COMPROMISED_NAMESPACES=(
     "@crowdstrike"
     "@art-ws"
@@ -212,7 +223,7 @@ scan_for_malicious_files() {
         if [[ -f "$file" && -r "$file" ]]; then
             local file_hash
             file_hash=$(shasum -a 256 "$file" 2>/dev/null | cut -d' ' -f1)
-            if [[ "$file_hash" == "$MALICIOUS_HASH" ]]; then
+            if printf "%s\n" "${MALICIOUS_HASHES[@]}" | grep -q -x "$file_hash"; then
                 echo "${file#"$project_path/"}" >> "$findings_file"
             fi
         fi

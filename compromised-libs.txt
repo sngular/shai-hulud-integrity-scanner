@@ -1,7 +1,3 @@
-# This file contains 517 confirmed compromised package versions from the complete JFrog analysis
-# The Shai-Hulud attack was self-replicating, so new compromised packages may still be discovered
-#
-# Sources: StepSecurity, Wiz.io, Semgrep, JFrog security advisories
 # Format: package_name:version
 #
 # MAINTAINING THIS LIST:
